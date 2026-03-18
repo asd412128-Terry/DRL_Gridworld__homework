@@ -10,11 +10,20 @@
             width: 60px; height: 60px; background: #fff; 
             display: flex; flex-direction: column; align-items: center; justify-content: center; 
             cursor: pointer; font-size: 14px; transition: all 0.2s; border-radius: 2px;
+            position: relative;
         }
         .cell:hover { background: #e0e0e0; }
         .start { background: #4CAF50 !important; color: white; font-weight: bold; }
         .end { background: #f44336 !important; color: white; font-weight: bold; }
         .obstacle { background: #607d8b !important; color: white; }
+        
+        /* 最佳路徑樣式 */
+        .path { 
+            background: #fff59d !important; /* 明亮的黃色 */
+            border: 2px solid #fbc02d;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+        }
+
         .container { display: flex; gap: 40px; margin-top: 20px; flex-wrap: wrap; }
         .label { margin-bottom: 8px; font-weight: bold; color: #333; }
         #status-box { 
@@ -122,13 +131,11 @@
             const isObs = (r, c) => obstacles.some(o => o[0] === r && o[1] === c);
             const isEnd = (r, c) => r === end[0] && c === end[1];
 
-            // 迭代 100 次確保收斂
             for (let i = 0; i < 100; i++) {
                 let new_V = V.map(row => [...row]);
                 for (let r = 0; r < n; r++) {
                     for (let c = 0; c < n; c++) {
                         if (isEnd(r, c) || isObs(r, c)) continue;
-
                         let actionValues = [];
                         for (let [dr, dc] of Object.values(actions)) {
                             let nr = r + dr, nc = c + dc;
@@ -137,7 +144,7 @@
                                 else if (isEnd(nr, nc)) actionValues.push(10 + gamma * 0);
                                 else actionValues.push(-0.1 + gamma * V[nr][nc]);
                             } else {
-                                actionValues.push(-1 + gamma * V[r][c]); // 撞牆懲罰
+                                actionValues.push(-1 + gamma * V[r][c]);
                             }
                         }
                         new_V[r][c] = Math.max(...actionValues);
@@ -146,7 +153,6 @@
                 V = new_V;
             }
 
-            // 根據最終 Value 決定 Policy
             for (let r = 0; r < n; r++) {
                 for (let c = 0; c < n; c++) {
                     if (isEnd(r, c) || isObs(r, c)) continue;
@@ -170,7 +176,12 @@
             statusBox.innerText = "計算中...";
             const result = valueIteration(n, start, end, obs);
             const arrowMap = {'U':'↑','D':'↓','L':'←','R':'→'};
+            const actions = { 'U': [-1, 0], 'D': [1, 0], 'L': [0, -1], 'R': [0, 1] };
 
+            // 清除舊的路徑標示
+            document.querySelectorAll('.cell').forEach(c => c.classList.remove('path'));
+
+            // 渲染 V 與 Policy
             for(let r=0; r<n; r++) {
                 for(let c=0; c<n; c++) {
                     const vCell = document.getElementById(`vGrid-${r}-${c}`);
@@ -182,10 +193,32 @@
                     }
                 }
             }
-            statusBox.innerText = "計算完成！畫面已更新最佳策略。";
+
+            // 標示最佳路徑
+            let currR = start[0];
+            let currC = start[1];
+            let step = 0;
+            const maxSteps = n * n; 
+
+            while (step < maxSteps) {
+                if (currR === end[0] && currC === end[1]) break;
+
+                // 標示當前路徑 (跳過起點)
+                if (!(currR === start[0] && currC === start[1])) {
+                    document.getElementById(`vGrid-${currR}-${currC}`).classList.add('path');
+                    document.getElementById(`pGrid-${currR}-${currC}`).classList.add('path');
+                }
+
+                let move = result.policy[currR][currC];
+                let [dr, dc] = actions[move];
+                currR += dr;
+                currC += dc;
+                step++;
+            }
+
+            statusBox.innerText = "計算完成！最佳路徑已用黃色標示。";
         }
 
-        // 初始化
         gen();
     </script>
 </body>
