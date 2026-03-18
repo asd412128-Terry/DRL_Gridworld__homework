@@ -3,7 +3,7 @@
 這是一個基於 **強化學習 (Reinforcement Learning)** 中的 **價值迭代 (Value Iteration)** 演算法開發的互動式網頁工具。使用者可以自定義網格地圖，並即時觀察演算法如何計算出每個狀態的價值與最佳行動路徑。
 
 ## 🚀 線上展示 (Demo)
-**👉 [點此開啟 Demo 網址](https://<你的帳號>.github.io/<你的專案名稱>/)**
+**👉 [點此開啟 Demo 網址](https://asd412128-terry.github.io/DRL_Gridworld__homework/)**
 *(請記得將上方連結替換成你實際的 GitHub Pages 網址)*
 
 ---
