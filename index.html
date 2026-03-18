@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>DRL GridWorld 最佳路徑模擬器</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f5f7f9; }
+        .grid { display: grid; gap: 4px; background: #ccc; border: 2px solid #999; padding: 4px; border-radius: 4px; }
+        .cell { 
+            width: 60px; height: 60px; background: #fff; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            cursor: pointer; font-size: 14px; transition: all 0.2s; border-radius: 2px;
+        }
+        .cell:hover { background: #e0e0e0; }
+        .start { background: #4CAF50 !important; color: white; font-weight: bold; }
+        .end { background: #f44336 !important; color: white; font-weight: bold; }
+        .obstacle { background: #607d8b !important; color: white; }
+        .container { display: flex; gap: 40px; margin-top: 20px; flex-wrap: wrap; }
+        .label { margin-bottom: 8px; font-weight: bold; color: #333; }
+        #status-box { 
+            padding: 15px; background: #e3f2fd; border-left: 5px solid #2196f3; 
+            margin-bottom: 20px; font-weight: bold; color: #0d47a1; border-radius: 4px;
+        }
+        .val-text { font-size: 12px; color: #1565c0; }
+        .policy-text { font-size: 24px; font-weight: bold; color: #2e7d32; }
+        input[type="number"] { padding: 5px; border: 1px solid #ccc; border-radius: 4px; width: 50px; }
+        button { padding: 6px 15px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 4px; transition: 0.2s; }
+        button:disabled { background: #bdbdbd; cursor: not-allowed; }
+        button:hover:not(:disabled) { background: #1976d2; }
+    </style>
+</head>
+<body>
+    <h2>DRL GridWorld 最佳路徑模擬器 (純前端版)</h2>
+    
+    <div id="status-box">請設定網格尺寸並點擊「生成網格」開始。</div>
+
+    <div style="margin-bottom: 20px;">
+        網格尺寸 (n x n): <input type="number" id="n" value="5" min="5" max="9">
+        <button onclick="gen()">生成網格</button>
+        <button id="calcBtn" onclick="calc()" disabled>計算最佳路徑</button>
+    </div>
+    
+    <div class="container">
+        <div>
+            <div class="label">價值矩陣 (Value Matrix)</div>
+            <div id="vGrid" class="grid"></div>
+        </div>
+        <div>
+            <div class="label">策略矩陣 (Policy Matrix)</div>
+            <div id="pGrid" class="grid"></div>
+        </div>
+    </div>
+
+    <script>
+        let n, start, end, obs = [];
+        const statusBox = document.getElementById('status-box');
+        const calcBtn = document.getElementById('calcBtn');
+
+        // 生成網格
+        function gen() {
+            n = parseInt(document.getElementById('n').value);
+            start = null; end = null; obs = [];
+            calcBtn.disabled = true;
+            statusBox.innerText = "第一步：請點選一個格子作為「起點」(綠色)。";
+            
+            ['vGrid', 'pGrid'].forEach(id => {
+                let el = document.getElementById(id);
+                el.style.gridTemplateColumns = `repeat(${n}, 60px)`;
+                el.innerHTML = '';
+                for(let i=0; i<n*n; i++) {
+                    let r = Math.floor(i/n), c = i%n;
+                    let cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `${id}-${r}-${c}`;
+                    cell.innerText = i + 1;
+                    cell.onclick = () => handleCellClick(r, c);
+                    el.appendChild(cell);
+                }
+            });
+        }
+
+        // 處理點擊事件
+        function handleCellClick(r, c) {
+            if(!start) {
+                start = [r,c];
+                updateUI(r, c, 'start', '起點');
+                statusBox.innerText = "第二步：請點選一個格子作為「終點」(紅色)。";
+            } else if(!end) {
+                if(r === start[0] && c === start[1]) return;
+                end = [r,c];
+                updateUI(r, c, 'end', '終點');
+                statusBox.innerText = `第三步：請點選 ${n-2} 個「障礙物」(灰色)。`;
+            } else if(obs.length < n-2) {
+                if((r===start[0] && c===start[1]) || (r===end[0] && c===end[1])) return;
+                if(obs.some(o => o[0] === r && o[1] === c)) return;
+                obs.push([r,c]);
+                updateUI(r, c, 'obstacle', '阻礙');
+                let rem = (n-2) - obs.length;
+                if(rem > 0) statusBox.innerText = `還剩 ${rem} 個障礙物需要設定。`;
+                else {
+                    statusBox.innerText = "設定完成！請點擊「計算最佳路徑」。";
+                    calcBtn.disabled = false;
+                }
+            }
+        }
+
+        function updateUI(r, c, cls, text) {
+            ['vGrid', 'pGrid'].forEach(id => {
+                const cell = document.getElementById(`${id}-${r}-${c}`);
+                cell.classList.add(cls);
+                cell.innerText = text;
+            });
+        }
+
+        // 核心 Value Iteration 演算法
+        function valueIteration(n, start, end, obstacles) {
+            let V = Array.from({ length: n }, () => Array(n).fill(0));
+            let policy = Array.from({ length: n }, () => Array(n).fill('U'));
+            const gamma = 0.9;
+            const actions = { 'U': [-1, 0], 'D': [1, 0], 'L': [0, -1], 'R': [0, 1] };
+
+            const isObs = (r, c) => obstacles.some(o => o[0] === r && o[1] === c);
+            const isEnd = (r, c) => r === end[0] && c === end[1];
+
+            // 迭代 100 次確保收斂
+            for (let i = 0; i < 100; i++) {
+                let new_V = V.map(row => [...row]);
+                for (let r = 0; r < n; r++) {
+                    for (let c = 0; c < n; c++) {
+                        if (isEnd(r, c) || isObs(r, c)) continue;
+
+                        let actionValues = [];
+                        for (let [dr, dc] of Object.values(actions)) {
+                            let nr = r + dr, nc = c + dc;
+                            if (nr >= 0 && nr < n && nc >= 0 && nc < n) {
+                                if (isObs(nr, nc)) actionValues.push(-1 + gamma * V[r][c]);
+                                else if (isEnd(nr, nc)) actionValues.push(10 + gamma * 0);
+                                else actionValues.push(-0.1 + gamma * V[nr][nc]);
+                            } else {
+                                actionValues.push(-1 + gamma * V[r][c]); // 撞牆懲罰
+                            }
+                        }
+                        new_V[r][c] = Math.max(...actionValues);
+                    }
+                }
+                V = new_V;
+            }
+
+            // 根據最終 Value 決定 Policy
+            for (let r = 0; r < n; r++) {
+                for (let c = 0; c < n; c++) {
+                    if (isEnd(r, c) || isObs(r, c)) continue;
+                    let bestAction = 'U', maxVal = -Infinity;
+                    for (let [name, [dr, dc]] of Object.entries(actions)) {
+                        let nr = r + dr, nc = c + dc, val;
+                        if (nr >= 0 && nr < n && nc >= 0 && nc < n && !isObs(nr, nc)) {
+                            val = (isEnd(nr, nc) ? 10 : -0.1) + gamma * V[nr][nc];
+                        } else {
+                            val = -1 + gamma * V[r][c];
+                        }
+                        if (val > maxVal) { maxVal = val; bestAction = name; }
+                    }
+                    policy[r][c] = bestAction;
+                }
+            }
+            return { V, policy };
+        }
+
+        function calc() {
+            statusBox.innerText = "計算中...";
+            const result = valueIteration(n, start, end, obs);
+            const arrowMap = {'U':'↑','D':'↓','L':'←','R':'→'};
+
+            for(let r=0; r<n; r++) {
+                for(let c=0; c<n; c++) {
+                    const vCell = document.getElementById(`vGrid-${r}-${c}`);
+                    const pCell = document.getElementById(`pGrid-${r}-${c}`);
+                    
+                    if(!vCell.classList.contains('start') && !vCell.classList.contains('end') && !vCell.classList.contains('obstacle')) {
+                        vCell.innerHTML = `<span class="val-text">${result.V[r][c].toFixed(2)}</span>`;
+                        pCell.innerHTML = `<span class="policy-text">${arrowMap[result.policy[r][c]]}</span>`;
+                    }
+                }
+            }
+            statusBox.innerText = "計算完成！畫面已更新最佳策略。";
+        }
+
+        // 初始化
+        gen();
+    </script>
+</body>
+</html>
