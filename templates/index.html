@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>DRL GridWorld 循序模擬器</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f5f7f9; }
+        .grid { display: grid; gap: 4px; background: #ccc; border: 2px solid #999; padding: 4px; border-radius: 4px; }
+        .cell { 
+            width: 60px; height: 60px; background: #fff; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            cursor: pointer; font-size: 14px; transition: all 0.2s; border-radius: 2px;
+            position: relative;
+        }
+        .cell:hover { background: #e0e0e0; }
+        /* 避免設定完後還能點擊 Value/Policy 方格 */
+        .no-click { cursor: default; }
+        .no-click:hover { background: #fff; }
+
+        .start { background: #4CAF50 !important; color: white; font-weight: bold; }
+        .end { background: #f44336 !important; color: white; font-weight: bold; }
+        .obstacle { background: #607d8b !important; color: white; }
+        
+        .path { 
+            background: #fff59d !important; 
+            border: 2px solid #fbc02d;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .container { display: flex; gap: 40px; margin-top: 20px; flex-wrap: wrap; align-items: flex-start; }
+        .grid-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .label { margin-bottom: 10px; font-weight: bold; color: #333; font-size: 18px; }
+        
+        #status-box { 
+            padding: 15px; background: #e3f2fd; border-left: 5px solid #2196f3; 
+            margin-bottom: 20px; font-weight: bold; color: #0d47a1; border-radius: 4px;
+        }
+        .val-text { font-size: 14px; color: #1565c0; font-weight: bold;}
+        .policy-text { font-size: 26px; font-weight: bold; color: #2e7d32; }
+        input[type="number"] { padding: 5px; border: 1px solid #ccc; border-radius: 4px; width: 50px; }
+        
+        button { padding: 8px 15px; margin-right: 5px; margin-bottom: 10px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 4px; transition: 0.2s; font-size: 14px; font-weight: bold; }
+        button:disabled { background: #bdbdbd; cursor: not-allowed; }
+        button:hover:not(:disabled) { background: #1976d2; }
+        
+        .btn-hw1 { background: #ff9800; }
+        .btn-hw1:hover:not(:disabled) { background: #f57c00; }
+        .btn-hw3 { background: #4caf50; }
+        .btn-hw3:hover:not(:disabled) { background: #388e3c; }
+
+        /* 初始隱藏矩陣 2 和 3 */
+        #vWrapper, #pWrapper { display: none; }
+    </style>
+</head>
+<body>
+    <h2>DRL GridWorld 循序模擬器 (HW1-1 ~ 1-3)</h2>
+    
+    <div id="status-box">請輸入網格尺寸，並點擊「生成 HW1-1 環境」。</div>
+
+    <div style="margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div>
+            網格尺寸 (n x n): <input type="number" id="n" value="5" min="5" max="9">
+            <button class="btn-hw1" onclick="gen()">1. 生成 HW1-1 環境</button>
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+            <button id="btnHW1_2" onclick="callHW1_2()" disabled>2. 執行 HW1-2 (隨機策略評估)</button>
+            <button id="btnHW1_3" class="btn-hw3" onclick="callHW1_3()" disabled>3. 執行 HW1-3 (計算最佳策略)</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="grid-wrapper" id="envWrapper">
+            <div class="label">方格一：環境地圖 (HW1-1)</div>
+            <div id="envGrid" class="grid"></div>
+        </div>
+
+        <div class="grid-wrapper" id="vWrapper">
+            <div class="label">方格二：價值矩陣 (Value)</div>
+            <div id="vGrid" class="grid no-click"></div>
+        </div>
+
+        <div class="grid-wrapper" id="pWrapper">
+            <div class="label">方格三：策略矩陣 (Policy)</div>
+            <div id="pGrid" class="grid no-click"></div>
+        </div>
+    </div>
+
+    <script>
+        let n, start, end, obs = [];
+        const statusBox = document.getElementById('status-box');
+        const btnHW1_2 = document.getElementById('btnHW1_2');
+        const btnHW1_3 = document.getElementById('btnHW1_3');
+
+        // 初始化空的方格 (輔助函數)
+        function initEmptyGrid(id, clickable = false) {
+            let el = document.getElementById(id);
+            el.style.gridTemplateColumns = `repeat(${n}, 60px)`;
+            el.innerHTML = '';
+            for(let i=0; i<n*n; i++) {
+                let r = Math.floor(i/n), c = i%n;
+                let cell = document.createElement('div');
+                cell.className = 'cell';
+                if (!clickable) cell.classList.add('no-click');
+                cell.id = `${id}-${r}-${c}`;
+                
+                // 只有方格一 (envGrid) 會顯示數字並允許點擊
+                if (clickable) {
+                    cell.innerText = i + 1;
+                    cell.onclick = () => handleCellClick(r, c);
+                }
+                el.appendChild(cell);
+            }
+        }
+
+        // 1. 生成 HW1-1 環境
+        function gen() {
+            n = parseInt(document.getElementById('n').value);
+            start = null; end = null; obs = [];
+            
+            // 重置按鈕與隱藏方格二、三
+            btnHW1_2.disabled = true;
+            btnHW1_3.disabled = true;
+            document.getElementById('vWrapper').style.display = 'none';
+            document.getElementById('pWrapper').style.display = 'none';
+            
+            // 只初始化並顯示方格一
+            initEmptyGrid('envGrid', true);
+            statusBox.innerText = "【HW1-1】請在「方格一」點選一個格子作為「起點」(綠色)。";
+        }
+
+        // 處理方格一的點擊設定
+        function handleCellClick(r, c) {
+            if(!start) {
+                start = [r,c];
+                document.getElementById(`envGrid-${r}-${c}`).classList.add('start');
+                document.getElementById(`envGrid-${r}-${c}`).innerText = '起點';
+                statusBox.innerText = "【HW1-1】請點選一個格子作為「終點」(紅色)。";
+            } else if(!end) {
+                if(r === start[0] && c === start[1]) return;
+                end = [r,c];
+                document.getElementById(`envGrid-${r}-${c}`).classList.add('end');
+                document.getElementById(`envGrid-${r}-${c}`).innerText = '終點';
+                statusBox.innerText = `【HW1-1】請點選 ${n-2} 個「障礙物」(灰色)。`;
+            } else if(obs.length < n-2) {
+                if((r===start[0] && c===start[1]) || (r===end[0] && c===end[1])) return;
+                if(obs.some(o => o[0] === r && o[1] === c)) return;
+                obs.push([r,c]);
+                document.getElementById(`envGrid-${r}-${c}`).classList.add('obstacle');
+                document.getElementById(`envGrid-${r}-${c}`).innerText = '阻礙';
+                
+                let rem = (n-2) - obs.length;
+                if(rem > 0) {
+                    statusBox.innerText = `【HW1-1】還剩 ${rem} 個障礙物需要設定。`;
+                } else {
+                    statusBox.innerText = "【設定完成】請點擊上方按鈕「2. 執行 HW1-2」來生成隨機策略。";
+                    btnHW1_2.disabled = false; // 解鎖 HW1-2
+                }
+            }
+        }
+
+        // 同步起點、終點、障礙物到方格二和方格三
+        function syncGridStyles(id) {
+            document.getElementById(`${id}-${start[0]}-${start[1]}`).classList.add('start');
+            document.getElementById(`${id}-${start[0]}-${start[1]}`).innerText = '起點';
+            
+            document.getElementById(`${id}-${end[0]}-${end[1]}`).classList.add('end');
+            document.getElementById(`${id}-${end[0]}-${end[1]}`).innerText = '終點';
+            
+            obs.forEach(o => {
+                document.getElementById(`${id}-${o[0]}-${o[1]}`).classList.add('obstacle');
+                // 方格二和三的障礙物不顯示文字，維持乾淨
+            });
+        }
+
+        // 2. 呼叫 HW1-2 (隨機策略與評估)
+        async function callHW1_2() {
+            statusBox.innerText = "HW1-2 計算中...";
+            const reqData = { n: n, start: start, end: end, obstacles: obs };
+            
+            try {
+                const response = await fetch('/hw1_2', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqData)
+                });
+                const data = await response.json();
+                
+                // 顯示方格二與方格三
+                document.getElementById('vWrapper').style.display = 'flex';
+                document.getElementById('pWrapper').style.display = 'flex';
+                
+                // 初始化方格二與三 (不可點擊)
+                initEmptyGrid('vGrid', false);
+                initEmptyGrid('pGrid', false);
+                
+                // 把起終點和障礙物塗色
+                syncGridStyles('vGrid');
+                syncGridStyles('pGrid');
+
+                renderResult(data.v, data.p, false); // 隨機策略不畫路徑
+                
+                statusBox.innerText = "【HW1-2 完成】方格二與三已出現！顯示的是「隨機策略」與其對應的價值。現在可以點擊「3. 執行 HW1-3」。";
+                btnHW1_3.disabled = false; // 解鎖 HW1-3
+            } catch(e) {
+                statusBox.innerText = "錯誤：請確認 Flask 後端是否已啟動。";
+            }
+        }
+
+        // 3. 呼叫 HW1-3 (價值迭代最佳策略)
+        async function callHW1_3() {
+            statusBox.innerText = "HW1-3 最佳策略計算中...";
+            const reqData = { n: n, start: start, end: end, obstacles: obs };
+            
+            try {
+                const response = await fetch('/hw1_3', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqData)
+                });
+                const data = await response.json();
+                
+                // 重新初始化方格二與三來清除舊資料
+                initEmptyGrid('vGrid', false);
+                initEmptyGrid('pGrid', false);
+                syncGridStyles('vGrid');
+                syncGridStyles('pGrid');
+
+                renderResult(data.v, data.p, true); // 最佳策略，畫出黃色路徑
+                
+                statusBox.innerText = "【HW1-3 完成】已透過價值迭代找出最佳解，並以黃色標示出最佳路徑！";
+            } catch(e) {
+                statusBox.innerText = "錯誤：請確認 Flask 後端是否已啟動。";
+            }
+        }
+
+        // 將後端傳回的 V(價值) 與 Policy(箭頭) 填入畫面
+        function renderResult(V, policy, drawPath) {
+            const arrowMap = {'U':'↑','D':'↓','L':'←','R':'→'};
+            const actions = { 'U': [-1, 0], 'D': [1, 0], 'L': [0, -1], 'R': [0, 1] };
+
+            // 清除舊的路徑標示
+            document.querySelectorAll('.cell').forEach(c => c.classList.remove('path'));
+
+            // 填寫數值與箭頭到對應方格
+            for(let r=0; r<n; r++) {
+                for(let c=0; c<n; c++) {
+                    const vCell = document.getElementById(`vGrid-${r}-${c}`);
+                    const pCell = document.getElementById(`pGrid-${r}-${c}`);
+                    
+                    if(!vCell.classList.contains('start') && !vCell.classList.contains('end') && !vCell.classList.contains('obstacle')) {
+                        vCell.innerHTML = `<span class="val-text">${V[r][c].toFixed(2)}</span>`;
+                        pCell.innerHTML = `<span class="policy-text">${arrowMap[policy[r][c]]}</span>`;
+                    }
+                }
+            }
+
+            // 若為最佳解，則在方格一、方格二、方格三標示黃色路徑
+            if (drawPath) {
+                let currR = start[0];
+                let currC = start[1];
+                let step = 0;
+                const maxSteps = n * n; 
+
+                while (step < maxSteps) {
+                    if (currR === end[0] && currC === end[1]) break;
+
+                    if (!(currR === start[0] && currC === start[1])) {
+                        // 在三個方格都畫上黃色底色，保持視覺統一
+                        document.getElementById(`envGrid-${currR}-${currC}`).classList.add('path');
+                        document.getElementById(`vGrid-${currR}-${currC}`).classList.add('path');
+                        document.getElementById(`pGrid-${currR}-${currC}`).classList.add('path');
+                    }
+
+                    let move = policy[currR][currC];
+                    let [dr, dc] = actions[move];
+                    let nextR = currR + dr;
+                    let nextC = currC + dc;
+                    
+                    let isObs = obs.some(o => o[0] === nextR && o[1] === nextC);
+                    if (nextR < 0 || nextR >= n || nextC < 0 || nextC >= n || isObs) {
+                        break; // 防止無限迴圈或撞牆
+                    }
+                    currR = nextR;
+                    currC = nextC;
+                    step++;
+                }
+            }
+        }
+
+        // 網頁載入時預設生成一次
+        gen();
+    </script>
+</body>
+</html>
