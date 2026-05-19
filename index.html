@@ -20,7 +20,6 @@
         .end { background: #f44336 !important; color: white; font-weight: bold; }
         .obstacle { background: #607d8b !important; color: white; }
         
-        /* 最佳路徑亮黃色樣式 */
         .path { 
             background: #fff59d !important; 
             border: 2px solid #fbc02d;
@@ -48,7 +47,6 @@
         .btn-hw3 { background: #4caf50; }
         .btn-hw3:hover:not(:disabled) { background: #388e3c; }
 
-        /* 初始隱藏方格二與方格三 */
         #vWrapper, #pWrapper { display: none; }
     </style>
 </head>
@@ -73,12 +71,10 @@
             <div class="label">方格一：環境地圖 (HW1-1)</div>
             <div id="envGrid" class="grid"></div>
         </div>
-
         <div class="grid-wrapper" id="vWrapper">
             <div class="label">方格二：價值矩陣 (Value)</div>
             <div id="vGrid" class="grid no-click"></div>
         </div>
-
         <div class="grid-wrapper" id="pWrapper">
             <div class="label">方格三：策略矩陣 (Policy)</div>
             <div id="pGrid" class="grid no-click"></div>
@@ -91,44 +87,32 @@
         const btnHW1_2 = document.getElementById('btnHW1_2');
         const btnHW1_3 = document.getElementById('btnHW1_3');
 
-        // ==== 強化學習核心演算法 (純 JavaScript 實現) ====
+        // ==== 強化學習核心演算法 (純前端 JS 計算) ====
         const GAMMA = 0.9;
         const ACTIONS = { 'U': [-1, 0], 'D': [1, 0], 'L': [0, -1], 'R': [0, 1] };
         const ACTION_KEYS = ['U', 'D', 'L', 'R'];
 
-        // 計算下一格狀態與 Reward
         function getRewardAndNextState(r, c, dr, dc) {
             let nr = r + dr, nc = c + dc;
-            // 檢查是否出界
             if (nr >= 0 && nr < n && nc >= 0 && nc < n) {
-                // 檢查是否撞到障礙物
-                if (obs.some(o => o[0] === nr && o[1] === nc)) {
-                    return { reward: -1, nr: r, nc: c }; // 撞障礙物，原地不動且懲罰
-                }
-                // 檢查是否抵達終點
-                if (nr === end[0] && nc === end[1]) {
-                    return { reward: 10, nr: nr, nc: nc };
-                }
-                // 正常移動
+                if (obs.some(o => o[0] === nr && o[1] === nc)) return { reward: -1, nr: r, nc: c };
+                if (nr === end[0] && nc === end[1]) return { reward: 10, nr: nr, nc: nc };
                 return { reward: -0.1, nr: nr, nc: nc };
             }
-            return { reward: -1, nr: r, nc: c }; // 撞牆，原地不動且懲罰
+            return { reward: -1, nr: r, nc: c };
         }
 
-        // HW1-2: 策略評估 (Policy Evaluation) - 直接依照目前 Policy 指派的方向更新，不用 Math.max
+        // HW1-2 策略評估 (無 Math.max)
         function policyEvaluation(policy) {
             let V = Array.from({length: n}, () => Array(n).fill(0));
-            for (let i = 0; i < 100; i++) { // 迭代 100 次以收斂
+            for (let i = 0; i < 100; i++) {
                 let new_V = V.map(row => [...row]);
                 for (let r = 0; r < n; r++) {
                     for (let c = 0; c < n; c++) {
                         if ((r === end[0] && c === end[1]) || obs.some(o => o[0] === r && o[1] === c)) continue;
-                        
                         let action = policy[r][c];
                         let [dr, dc] = ACTIONS[action];
                         let { reward, nr, nc } = getRewardAndNextState(r, c, dr, dc);
-                        
-                        // Bellman Equation
                         new_V[r][c] = reward + GAMMA * V[nr][nc];
                     }
                 }
@@ -137,18 +121,16 @@
             return V;
         }
 
-        // HW1-3: 價值迭代 (Value Iteration) - 尋找最佳價值與最佳策略
+        // HW1-3 價值迭代 (有 Math.max)
         function calculateValueIteration() {
             let V = Array.from({length: n}, () => Array(n).fill(0));
             let policy = Array.from({length: n}, () => Array(n).fill('U'));
 
-            // 1. 迭代尋找最佳 V(s) (使用 Math.max)
             for (let i = 0; i < 100; i++) {
                 let new_V = V.map(row => [...row]);
                 for (let r = 0; r < n; r++) {
                     for (let c = 0; c < n; c++) {
                         if ((r === end[0] && c === end[1]) || obs.some(o => o[0] === r && o[1] === c)) continue;
-                        
                         let actionValues = [];
                         for (let key of ACTION_KEYS) {
                             let [dr, dc] = ACTIONS[key];
@@ -161,30 +143,22 @@
                 V = new_V;
             }
 
-            // 2. 根據收斂後的 V(s) 反推最佳 Policy (Greedy Policy)
             for (let r = 0; r < n; r++) {
                 for (let c = 0; c < n; c++) {
                     if ((r === end[0] && c === end[1]) || obs.some(o => o[0] === r && o[1] === c)) continue;
-                    
-                    let max_val = -Infinity;
-                    let best_a = 'U';
+                    let max_val = -Infinity, best_a = 'U';
                     for (let key of ACTION_KEYS) {
                         let [dr, dc] = ACTIONS[key];
                         let { reward, nr, nc } = getRewardAndNextState(r, c, dr, dc);
                         let val = reward + GAMMA * V[nr][nc];
-                        if (val > max_val) {
-                            max_val = val;
-                            best_a = key;
-                        }
+                        if (val > max_val) { max_val = val; best_a = key; }
                     }
                     policy[r][c] = best_a;
                 }
             }
             return { V, policy };
         }
-        // ==========================================
 
-        // 初始化空白方格 UI
         function initEmptyGrid(id, clickable = false) {
             let el = document.getElementById(id);
             el.style.gridTemplateColumns = `repeat(${n}, 60px)`;
@@ -195,7 +169,6 @@
                 cell.className = 'cell';
                 if (!clickable) cell.classList.add('no-click');
                 cell.id = `${id}-${r}-${c}`;
-                
                 if (clickable) {
                     cell.innerText = i + 1;
                     cell.onclick = () => handleCellClick(r, c);
@@ -204,21 +177,17 @@
             }
         }
 
-        // 1. 生成 HW1-1 環境
         function gen() {
             n = parseInt(document.getElementById('n').value);
             start = null; end = null; obs = [];
-            
             btnHW1_2.disabled = true;
             btnHW1_3.disabled = true;
             document.getElementById('vWrapper').style.display = 'none';
             document.getElementById('pWrapper').style.display = 'none';
-            
             initEmptyGrid('envGrid', true);
             statusBox.innerText = "【HW1-1】請在「方格一」點選一個格子作為「起點」(綠色)。";
         }
 
-        // 處理方格一的環境配置點擊
         function handleCellClick(r, c) {
             if(!start) {
                 start = [r,c];
@@ -248,7 +217,6 @@
             }
         }
 
-        // 同步色彩狀態到方格二、方格三
         function syncGridStyles(id) {
             document.getElementById(`${id}-${start[0]}-${start[1]}`).classList.add('start');
             document.getElementById(`${id}-${start[0]}-${start[1]}`).innerText = '起點';
@@ -257,9 +225,7 @@
             obs.forEach(o => document.getElementById(`${id}-${o[0]}-${o[1]}`).classList.add('obstacle'));
         }
 
-        // 2. 執行 HW1-2: 隨機策略與評估
         function callHW1_2() {
-            // 在前端隨機生成方向
             let randomPolicy = Array.from({length: n}, () => Array(n).fill('U'));
             for(let r=0; r<n; r++) {
                 for(let c=0; c<n; c++) {
@@ -267,89 +233,57 @@
                     randomPolicy[r][c] = ACTION_KEYS[Math.floor(Math.random() * ACTION_KEYS.length)];
                 }
             }
-            
-            // 呼叫純 JS 策略評估
             let V = policyEvaluation(randomPolicy);
-            
-            // 展開並初始化方格二、三
             document.getElementById('vWrapper').style.display = 'flex';
             document.getElementById('pWrapper').style.display = 'flex';
             initEmptyGrid('vGrid', false);
             initEmptyGrid('pGrid', false);
             syncGridStyles('vGrid');
             syncGridStyles('pGrid');
-
-            renderResult(V, randomPolicy, false); // 隨機策略不繪製最佳路徑
-            
+            renderResult(V, randomPolicy, false);
             statusBox.innerText = "【HW1-2 完成】方格二與三已出現！顯示的是「隨機策略」與其對應的價值矩陣。接下來可以點擊「3. 執行 HW1-3」。";
             btnHW1_3.disabled = false; 
         }
 
-        // 3. 執行 HW1-3: 價值迭代最佳化
         function callHW1_3() {
-            // 呼叫純 JS 價值迭代
             let result = calculateValueIteration();
-            
-            // 重置並清空舊路徑
             initEmptyGrid('vGrid', false);
-            initGridStyles = initEmptyGrid('pGrid', false);
+            initEmptyGrid('pGrid', false);
             syncGridStyles('vGrid');
             syncGridStyles('pGrid');
-
-            renderResult(result.V, result.policy, true); // 最佳化，繪製黃色最佳路徑
+            renderResult(result.V, result.policy, true);
             statusBox.innerText = "【HW1-3 完成】已透過價值迭代找出最佳解！三個方格均已用黃色標示出最佳路徑。";
         }
 
-        // 渲染資料到網格上
         function renderResult(V, policy, drawPath) {
             const arrowMap = {'U':'↑','D':'↓','L':'←','R':'→'};
-
-            // 清除之前的 path 樣式
             document.querySelectorAll('.cell').forEach(c => c.classList.remove('path'));
-
             for(let r=0; r<n; r++) {
                 for(let c=0; c<n; c++) {
                     const vCell = document.getElementById(`vGrid-${r}-${c}`);
                     const pCell = document.getElementById(`pGrid-${r}-${c}`);
-                    
                     if(!vCell.classList.contains('start') && !vCell.classList.contains('end') && !vCell.classList.contains('obstacle')) {
                         vCell.innerHTML = `<span class="val-text">${V[r][c].toFixed(2)}</span>`;
                         pCell.innerHTML = `<span class="policy-text">${arrowMap[policy[r][c]]}</span>`;
                     }
                 }
             }
-
-            // 如果是最佳解狀態，在方格一、二、三繪製最佳路徑
             if (drawPath) {
-                let currR = start[0];
-                let currC = start[1];
-                let step = 0;
-                const maxSteps = n * n; 
-
-                while (step < maxSteps) {
+                let currR = start[0], currC = start[1], step = 0;
+                while (step < n * n) {
                     if (currR === end[0] && currC === end[1]) break;
-
                     if (!(currR === start[0] && currC === start[1])) {
-                        document.getElementById(`envGrid-${currR}-${currC}`).classList.add('path');
-                        document.getElementById(`vGrid-${currR}-${currC}`).classList.add('path');
-                        document.getElementById(`pGrid-${currR}-${currC}`).classList.add('path');
+                        document.getElementById('envGrid-' + currR + '-' + currC).classList.add('path');
+                        document.getElementById('vGrid-' + currR + '-' + currC).classList.add('path');
+                        document.getElementById('pGrid-' + currR + '-' + currC).classList.add('path');
                     }
-
                     let move = policy[currR][currC];
                     let [dr, dc] = ACTIONS[move];
-                    let nextR = currR + dr;
-                    let nextC = currC + dc;
-                    
-                    let isObs = obs.some(o => o[0] === nextR && o[1] === nextC);
-                    if (nextR < 0 || nextR >= n || nextC < 0 || nextC >= n || isObs) break;
-                    
-                    currR = nextR;
-                    currC = nextC;
+                    currR += dr; currC += dc;
                     step++;
                 }
             }
         }
-
         gen();
     </script>
 </body>
